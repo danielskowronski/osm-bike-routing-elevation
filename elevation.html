@@ -1,4 +1,6 @@
-<script src="https://ajax.aspnetcdn.com/ajax/jQuery/jquery-3.4.0.min.js"></script>
+<div id="elevationPlot" name="elevationPlot"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/1.47.4/plotly-basic.min.js"></script>
 <script>
 const OSMURL=prompt("OSM URL with directions","https://www.openstreetmap.org/directions?engine=fossgis_osrm_bike&route=50.0776%2C19.9914%3B50.1012%2C19.9643")
 const routingURLbegin="https://routing.openstreetmap.de/routed-bike/route/v1/driving/"
@@ -23,6 +25,7 @@ if (OSMURL==null || OSMURL.indexOf("directions?engine=fossgis_osrm_bike&route=")
 	document.write("Incorrect URL. Pleasre refresh for another try.")
 	throw new Error("incorrect_url");
 }
+document.write("<a href="+OSMURL+">"+OSMURL+"</a>")
 
 var endpoints=decodeURIComponent(OSMURL.split("?")[1].split("&")[1].split("=")[1]).split("#")[0]
 var e1=endpoints.split(";")[0].split(",")[0]
@@ -38,6 +41,8 @@ if (request.status !== 200) {
 	throw new Error("xhr_routing");
 }
 var routeSteps=JSON.parse(request.responseText).routes[0].legs[0].steps
+var descs=[]
+var heights=[]
 
 for (i=0;i<routeSteps.length;i++){ 
 	rs=routeSteps[i]
@@ -49,21 +54,12 @@ for (i=0;i<routeSteps.length;i++){
 	rs.elevationSecond=getElevationResult(rs.maneuver)
 }
 
-/*
-$.get(
-	routingURLbegin+e2+","+e1+";"+e4+","+e3+routingURLend,
-	function(resp){
-		window.routesteps=resp.routes[0].legs[0].steps
+for (i=0;i<routeSteps.length;i++){ 
+	descs.push("Step "+(i+1))
+	heights.push(routeSteps[i].elevationFirst) 
+} 
+descs.push("Finish")
+heights.push(routeSteps[routeSteps.length-1].elevationSecond)
 
-		for (i=0;i<window.routesteps.length;i++){ 
-			rs=window.routesteps[i]
-			rs.stepdescr=$("#turnbyturn tr")[i]
-			rs.elevationFirst=null
-			rs.elevationSecond=null
-			getElevationResult(rs.maneuver,rs.elevationFirst)
-			getElevationResult(rs.maneuver,rs.elevationSecond)
-		}
-	}
-)
-*/
+Plotly.newPlot("elevationPlot", [{x: descs, y: heights, type: "scatter"}]);
 </script>

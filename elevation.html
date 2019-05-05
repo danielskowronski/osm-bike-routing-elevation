@@ -1,65 +1,164 @@
+<!doctype html>
+<html>
+<head>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/1.47.4/plotly-basic.min.js"></script>
+	<title>osm-bike-routing-elevation</title>
+</head>
+<body>
+<style type="text/css">
+	html,body{
+		padding: 0;
+		margin: 0;
+		overflow: hidden;
+	}
+	#elevationPlot{
+		width:     100%;
+		height:    200px;
+		position: absolute;
+	}
+	#OSM{
+		width:      100%;
+		margin-top: 200px;
+		height:     calc(100% - 200px);
+		position:   absolute;
+	}
+
+	#markURLlocator, #refreshPlot{
+		position: fixed;
+		z-index:   9999;
+	}
+	#markURLlocator{
+		left:      85px;
+		bottom:    35px;
+		color: red;
+		font-weight: bold;
+		font-size: 48px;
+	}
+	#refreshPlot{
+		left:     0;
+		top:      0;
+		border: 5px solid red;
+	}
+	#refreshPlot input,#refreshPlot button{
+		width: 210px;
+
+		border: none;
+	}
+	#refreshPlot button{
+		background-color: lightgreen;
+	}
+</style>
+
+<div id="refreshPlot">
+	<input type=text id="URL" value="" placeholder="https://routing.openstreetmap.de/..."><br />
+	<button onClick="refreshPlot()">refresh Plot</button>
+</div>
+<div id="markURLlocator">⇩</div>
 <div id="elevationPlot" name="elevationPlot"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/1.47.4/plotly-basic.min.js"></script>
+
+<iframe id="OSM" src="https://routing.openstreetmap.de/?z=11&center=37.334951%2C-122.011414&loc=37.410967%2C-122.071387&loc=37.329765%2C-122.319717&hl=en&alt=0&srv=1"></iframe>
+
 <script>
-const OSMURL=prompt("OSM URL with directions","https://www.openstreetmap.org/directions?engine=fossgis_osrm_bike&route=50.0776%2C19.9914%3B50.1012%2C19.9643")
+refreshPlotReal();
+
 const routingURLbegin="https://routing.openstreetmap.de/routed-bike/route/v1/driving/"
 const routingURLend="?overview=false&geometries=polyline&steps=true"
 const elevationURLbegin="http://open-elevation-api.skowronski.tech/api/v1/lookup?locations="
+
+paceOptions = {
+  elements: false,
+  restartOnPushState: false,
+  restartOnRequestAfter: false
+}
 
 function getElevationResult(routeStepManeuver,returnObject){
 	var request = new XMLHttpRequest();
 	request.open("GET", elevationURLbegin+routeStepManeuver.location[1]+","+routeStepManeuver.location[0], false);
 	request.send(null);
 	if (request.status !== 200) {
-		document.write("Elevation server thrown error. Pleasre refresh for another try.")
-		throw new Error("xhr_elevation");
+		console.error(JSON.parse(request.responseText));
+		return;
 	}
 	var resp = JSON.parse(request.responseText).results[0]
-	console.log(resp)
 	return resp.elevation;
-
 }
 
-if (OSMURL==null || OSMURL.indexOf("directions?engine=fossgis_osrm_bike&route=")<0){
-	document.write("Incorrect URL. Pleasre refresh for another try.")
-	throw new Error("incorrect_url");
-}
-document.write("<a href="+OSMURL+">"+OSMURL+"</a>")
-
-var endpoints=decodeURIComponent(OSMURL.split("?")[1].split("&")[1].split("=")[1]).split("#")[0]
-var e1=endpoints.split(";")[0].split(",")[0]
-var e2=endpoints.split(";")[0].split(",")[1]
-var e3=endpoints.split(";")[1].split(",")[0]
-var e4=endpoints.split(";")[1].split(",")[1]
-
-var request = new XMLHttpRequest();
-request.open("GET", routingURLbegin+e2+","+e1+";"+e4+","+e3+routingURLend, false);
-request.send(null);
-if (request.status !== 200) {
-	document.write("Routing server thrown error. Pleasre refresh for another try.")
-	throw new Error("xhr_routing");
-}
-var routeSteps=JSON.parse(request.responseText).routes[0].legs[0].steps
-var descs=[]
-var heights=[]
-
-for (i=0;i<routeSteps.length;i++){ 
-	rs=routeSteps[i]
-	rs.stepdescr=$("#turnbyturn tr")[i]
-	rs.elevationFirst=null
-	rs.elevationSecond=null
-
-	rs.elevationFirst=getElevationResult(rs.maneuver)
-	rs.elevationSecond=getElevationResult(rs.maneuver)
+function refreshPlot(){
+	/* 
+		HACK:
+		synchronousness of XHR in refreshPlotReal locks DOM for entire live time of call from main JS
+	*/
+	$("#elevationPlot").html("<h1 style='color: green'><br />working...")
+	window.setInterval(refreshPlotReal,10)
 }
 
-for (i=0;i<routeSteps.length;i++){ 
-	descs.push("Step "+(i+1))
-	heights.push(routeSteps[i].elevationFirst) 
-} 
-descs.push("Finish")
-heights.push(routeSteps[routeSteps.length-1].elevationSecond)
+function refreshPlotReal(){
+	var OSMURL=$("#URL").val()
+	if (OSMURL==null || OSMURL.indexOf("https://routing.openstreetmap.de/?")<0){
+		$("#elevationPlot").html("<h1 style='color: red'><br />Incorrect URL</h1><h2>Click <i>Share Route</i> (the one near red arrow) and copy <b>link</b> (<i>not Shortlink</i>) and paste to textbox near <i>Refresh plot</i>.")
+		return
+	}
 
-Plotly.newPlot("elevationPlot", [{x: descs, y: heights, type: "scatter"}]);
+	var urlParams=OSMURL.split("?")[1].split("&")
+	var locations=""; 
+	urlParams.forEach(function(d){
+		if (d.split("=")[0]=="loc"){
+			loc=decodeURIComponent(d.split("=")[1]); 
+			locations+=loc.split(",")[1]+","+loc.split(",")[0]+";";
+		}
+	}); 
+	locations=locations.slice(0, locations.length-1);
+
+	var request = new XMLHttpRequest();
+	request.open("GET", routingURLbegin+locations+routingURLend, false);
+	request.send(null);
+	if (request.status !== 200) {
+		console.error(JSON.parse(request.responseText));
+		return;
+	}
+
+	var routeSteps=JSON.parse(request.responseText).routes[0].legs[0].steps
+	var descs=[]
+	var heights=[]
+
+	for (i=0;i<routeSteps.length;i++){ 
+		rs=routeSteps[i]
+		rs.stepdescr=$("#turnbyturn tr")[i]
+		rs.elevationFirst=null
+		rs.elevationSecond=null
+
+		rs.elevationFirst=getElevationResult(rs.maneuver)
+		rs.elevationSecond=getElevationResult(rs.maneuver)
+	}
+
+	for (i=0;i<routeSteps.length;i++){ 
+		descs.push("Step "+(i+1))
+		heights.push(routeSteps[i].elevationFirst) 
+	} 
+	descs.push("Finish")
+	heights.push(routeSteps[routeSteps.length-1].elevationSecond)
+
+	$("#elevationPlot").html("")
+	Plotly.newPlot(
+		"elevationPlot", 
+		[{
+			x: descs, 
+			y: heights, 
+			type: "scatter"
+		}],
+		{
+			title:false,
+			margin: {
+				l: 50,
+				r: 50,
+				b: 50,
+				t: 50,
+				pad: 4
+			}
+		}
+	);
+}
 </script>
+</body>
+</html>
